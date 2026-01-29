@@ -1,229 +1,359 @@
 import os
+import time
 import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk
-import time
 
 # --- CRASH PREVENTION ---
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
 
-class FontPicker(tk.Toplevel):
-    def __init__(self, parent, current_font, callback):
+
+class FontSelectionDialog(tk.Toplevel):
+    def __init__(self, parent, selected_font, on_font_selected):
         super().__init__(parent)
-        self.title("Font Seç")
+        self.title("Select Font")
         self.geometry("300x450")
-        self.callback = callback
-        
-        self.search_var = tk.StringVar()
-        self.search_var.trace("w", self.update_list)
-        tk.Label(self, text="Font Ara:").pack(pady=5)
-        self.entry = tk.Entry(self, textvariable=self.search_var)
-        self.entry.pack(fill='x', padx=10)
-        self.entry.focus_set()
+        self.on_font_selected = on_font_selected
 
-        self.frame = tk.Frame(self)
-        self.frame.pack(fill='both', expand=True, padx=10, pady=10)
-        self.listbox = tk.Listbox(self.frame)
-        self.listbox.pack(side='left', fill='both', expand=True)
-        
-        scrollbar = tk.Scrollbar(self.frame, command=self.listbox.yview)
-        scrollbar.pack(side='right', fill='y')
-        self.listbox.config(yscrollcommand=scrollbar.set)
-        
+        self.search_variable = tk.StringVar()
+        self.search_variable.trace_add("write", self._filter_fonts)
+
+        tk.Label(self, text="Search Font:").pack(pady=5)
+        self.search_entry = tk.Entry(self, textvariable=self.search_variable)
+        self.search_entry.pack(fill="x", padx=10)
+        self.search_entry.focus_set()
+
+        self.list_frame = tk.Frame(self)
+        self.list_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.font_listbox = tk.Listbox(self.list_frame)
+        self.font_listbox.pack(side="left", fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(self.list_frame, command=self.font_listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.font_listbox.config(yscrollcommand=scrollbar.set)
+
         from tkinter import font
-        self.all_fonts = sorted(font.families())
-        self.listbox.bind("<<ListboxSelect>>", self.on_select)
-        self.update_list()
+        self.available_fonts = sorted(font.families())
 
-    def update_list(self, *args):
-        search_term = self.search_var.get().lower()
-        self.listbox.delete(0, tk.END)
-        for f in self.all_fonts:
-            if search_term in f.lower():
-                self.listbox.insert(tk.END, f)
+        self.font_listbox.bind("<<ListboxSelect>>", self._handle_font_selection)
+        self._populate_font_list()
 
-    def on_select(self, event):
-        if self.listbox.curselection():
-            selected = self.listbox.get(self.listbox.curselection())
-            self.callback(selected)
+    def _populate_font_list(self):
+        self.font_listbox.delete(0, tk.END)
+        for font_name in self.available_fonts:
+            self.font_listbox.insert(tk.END, font_name)
 
-class DateSettingsWindow(tk.Toplevel):
+    def _filter_fonts(self, *_):
+        query = self.search_variable.get().lower()
+        self.font_listbox.delete(0, tk.END)
+        for font_name in self.available_fonts:
+            if query in font_name.lower():
+                self.font_listbox.insert(tk.END, font_name)
+
+    def _handle_font_selection(self, _event):
+        if self.font_listbox.curselection():
+            selected_font = self.font_listbox.get(self.font_listbox.curselection())
+            self.on_font_selected(selected_font)
+
+
+class DateConfigurationWindow(tk.Toplevel):
     def __init__(self, parent, clock_app):
         super().__init__(parent)
-        self.title("Date Settings")
-        self.clock = clock_app
+        self.title("Date Configuration")
+        self.clock_app = clock_app
         self.geometry("280x350")
         self.resizable(False, False)
 
-        self.show_var = tk.BooleanVar(value=self.clock.show_date)
-        tk.Checkbutton(self, text="Show Date", variable=self.show_var, 
-                       command=self.sync_show).pack(pady=10)
+        self.show_date_variable = tk.BooleanVar(value=self.clock_app.is_date_visible)
+        tk.Checkbutton(
+            self,
+            text="Show Date",
+            variable=self.show_date_variable,
+            command=self._sync_date_visibility
+        ).pack(pady=10)
 
         tk.Label(self, text="Alignment:").pack()
-        self.align_combo = ttk.Combobox(self, values=["center", "left", "right"], state="readonly")
-        self.align_combo.set(self.clock.date_align)
-        self.align_combo.pack(pady=5)
-        self.align_combo.bind("<<ComboboxSelected>>", lambda e: self.set_val('date_align'))
+        self.alignment_selector = ttk.Combobox(
+            self,
+            values=["center", "left", "right"],
+            state="readonly"
+        )
+        self.alignment_selector.set(self.clock_app.date_alignment)
+        self.alignment_selector.pack(pady=5)
+        self.alignment_selector.bind(
+            "<<ComboboxSelected>>",
+            lambda e: self._update_setting("date_alignment")
+        )
 
         tk.Label(self, text="Font Ratio:").pack()
-        self.ratio_combo = ttk.Combobox(self, values=["1/4", "1/3", "1/2"], state="readonly")
-        self.ratio_combo.set(self.clock.date_ratio_str)
-        self.ratio_combo.pack(pady=5)
-        self.ratio_combo.bind("<<ComboboxSelected>>", lambda e: self.set_val('date_ratio_str'))
+        self.font_ratio_selector = ttk.Combobox(
+            self,
+            values=["1/4", "1/3", "1/2"],
+            state="readonly"
+        )
+        self.font_ratio_selector.set(self.clock_app.date_font_ratio)
+        self.font_ratio_selector.pack(pady=5)
+        self.font_ratio_selector.bind(
+            "<<ComboboxSelected>>",
+            lambda e: self._update_setting("date_font_ratio")
+        )
 
         tk.Label(self, text="Language:").pack()
-        self.lang_combo = ttk.Combobox(self, values=["Turkish", "English", "Turkish (Safe)"], state="readonly")
-        self.lang_combo.set(self.clock.lang)
-        self.lang_combo.pack(pady=5)
-        self.lang_combo.bind("<<ComboboxSelected>>", lambda e: self.set_val('lang'))
+        self.language_selector = ttk.Combobox(
+            self,
+            values=["Turkish", "English", "Turkish (Safe)"],
+            state="readonly"
+        )
+        self.language_selector.set(self.clock_app.language)
+        self.language_selector.pack(pady=5)
+        self.language_selector.bind(
+            "<<ComboboxSelected>>",
+            lambda e: self._update_setting("language")
+        )
 
-    def sync_show(self):
-        self.clock.show_date = self.show_var.get()
-        self.clock.refresh_ui()
+    def _sync_date_visibility(self):
+        self.clock_app.is_date_visible = self.show_date_variable.get()
+        self.clock_app.refresh_display()
 
-    def set_val(self, attr):
-        if attr == 'date_align': self.clock.date_align = self.align_combo.get()
-        if attr == 'date_ratio_str': self.clock.date_ratio_str = self.ratio_combo.get()
-        if attr == 'lang': self.clock.lang = self.lang_combo.get()
-        self.clock.refresh_ui()
+    def _update_setting(self, attribute_name):
+        if attribute_name == "date_alignment":
+            self.clock_app.date_alignment = self.alignment_selector.get()
+        elif attribute_name == "date_font_ratio":
+            self.clock_app.date_font_ratio = self.font_ratio_selector.get()
+        elif attribute_name == "language":
+            self.clock_app.language = self.language_selector.get()
 
-class UltimateClock:
+        self.clock_app.refresh_display()
+
+
+class ClockApplication:
     def __init__(self):
         self.root = tk.Tk()
-        self.current_font = 'Didot'
-        self.current_size = 110
-        self.show_date = True
-        self.date_align = "center"
-        self.date_ratio_str = "1/3"
-        self.lang = "Turkish"
-        
-        self.months = {
-            "Turkish": ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
-            "Turkish (Safe)": ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
-            "English": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+        # Appearance settings
+        self.current_font_family = "Didot"
+        self.current_time_font_size = 110
+        self.is_date_visible = True
+        self.date_alignment = "center"
+        self.date_font_ratio = "1/3"
+        self.language = "Turkish"
+
+        self.month_names = {
+            "Turkish": ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
+            "Turkish (Safe)": ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran",
+                               "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
+            "English": ["January", "February", "March", "April", "May", "June",
+                        "July", "August", "September", "October", "November", "December"]
         }
-        self.days = {
-            "Turkish": ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"],
-            "Turkish (Safe)": ["Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi", "Pazar"],
-            "English": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        self.day_names = {
+            "Turkish": ["Pazartesi", "Salı", "Çarşamba", "Perşembe",
+                        "Cuma", "Cumartesi", "Pazar"],
+            "Turkish (Safe)": ["Pazartesi", "Sali", "Carsamba", "Persembe",
+                               "Cuma", "Cumartesi", "Pazar"],
+            "English": ["Monday", "Tuesday", "Wednesday", "Thursday",
+                        "Friday", "Saturday", "Sunday"]
         }
-        
-        self.root.overrideredirect(True)
-        self.root.config(bg='systemTransparent')
-        self.root.wm_attributes("-transparent", True)
-        
-        self.container = tk.Frame(self.root, bg='systemTransparent')
-        self.container.pack(expand=True, fill='both')
 
-        self.time_label = tk.Label(self.container, fg='white', bg='systemTransparent')
-        self.time_label.pack(side='top')
+        self._configure_root_window()
+        self._create_widgets()
+        self._create_context_menu()
 
-        self.date_label = tk.Label(self.container, fg='white', bg='systemTransparent')
+        self.refresh_display()
+        self._center_window()
+        self._apply_macos_window_behavior()
+        self._update_time_loop()
 
-        for w in [self.time_label, self.date_label]:
-            w.bind("<Button-1>", self.start_move)
-            w.bind("<B1-Motion>", self.do_move)
-            w.bind("<Button-2>", self.show_menu)
-            w.bind("<Button-3>", self.show_menu)
-
-        self.menu = tk.Menu(self.root, tearoff=0)
-        self.menu.add_command(label="Browse Fonts", command=lambda: FontPicker(self.root, self.current_font, self.set_font))
-        self.menu.add_command(label="Edit Time Size", command=self.edit_size)
-        self.menu.add_command(label="Date Settings", command=lambda: DateSettingsWindow(self.root, self))
-        self.menu.add_command(label="Manual Position", command=self.edit_position)
-        self.menu.add_separator()
-        self.menu.add_command(label="Quit", command=self.root.destroy)
-
-        self.refresh_ui()
-        self.center_window()
-        self.hide_dock_and_stay()
-        self.update_clock()
         self.root.mainloop()
 
-    def get_formatted_date(self):
-        t = time.localtime()
-        m_list = self.months.get(self.lang, self.months["English"])
-        d_list = self.days.get(self.lang, self.days["English"])
-        if "Turkish" in self.lang:
-            return f"{t.tm_mday} {m_list[t.tm_mon-1]} {t.tm_year}, {d_list[t.tm_wday]}"
-        return f"{d_list[t.tm_wday]}, {m_list[t.tm_mon-1]} {t.tm_mday}, {t.tm_year}"
+    # -------------------- Window Setup --------------------
 
-    def set_font(self, font_name):
-        self.current_font = font_name
-        self.refresh_ui()
+    def _configure_root_window(self):
+        self.root.overrideredirect(True)
+        self.root.config(bg="systemTransparent")
+        self.root.wm_attributes("-transparent", True)
 
-    def refresh_ui(self):
-        # 1. Calculate Ratio independently
+    def _create_widgets(self):
+        self.container_frame = tk.Frame(self.root, bg="systemTransparent")
+        self.container_frame.pack(expand=True, fill="both")
+
+        self.time_label = tk.Label(
+            self.container_frame,
+            fg="white",
+            bg="systemTransparent"
+        )
+        self.time_label.pack(side="top")
+
+        self.date_label = tk.Label(
+            self.container_frame,
+            fg="white",
+            bg="systemTransparent"
+        )
+
+        for widget in (self.time_label, self.date_label):
+            widget.bind("<Button-1>", self._start_window_drag)
+            widget.bind("<B1-Motion>", self._drag_window)
+            widget.bind("<Button-2>", self._show_context_menu)
+            widget.bind("<Button-3>", self._show_context_menu)
+
+    def _create_context_menu(self):
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(
+            label="Browse Fonts",
+            command=lambda: FontSelectionDialog(
+                self.root,
+                self.current_font_family,
+                self.set_font_family
+            )
+        )
+        self.context_menu.add_command(
+            label="Edit Time Size",
+            command=self._prompt_time_font_size
+        )
+        self.context_menu.add_command(
+            label="Date Settings",
+            command=lambda: DateConfigurationWindow(self.root, self)
+        )
+        self.context_menu.add_command(
+            label="Manual Position",
+            command=self._prompt_window_position
+        )
+        self.context_menu.add_separator()
+        self.context_menu.add_command(
+            label="Quit",
+            command=self.root.destroy
+        )
+
+    # -------------------- Display Logic --------------------
+
+    def get_formatted_date_string(self):
+        current_time = time.localtime()
+        months = self.month_names.get(self.language, self.month_names["English"])
+        days = self.day_names.get(self.language, self.day_names["English"])
+
+        if "Turkish" in self.language:
+            return f"{current_time.tm_mday} {months[current_time.tm_mon - 1]} " \
+                   f"{current_time.tm_year}, {days[current_time.tm_wday]}"
+
+        return f"{days[current_time.tm_wday]}, {months[current_time.tm_mon - 1]} " \
+               f"{current_time.tm_mday}, {current_time.tm_year}"
+
+    def set_font_family(self, font_family):
+        self.current_font_family = font_family
+        self.refresh_display()
+
+    def refresh_display(self):
         ratio_map = {"1/4": 4, "1/3": 3, "1/2": 2}
-        date_size = self.current_size // ratio_map.get(self.date_ratio_str, 3)
-        
-        # 2. Update Label visual properties
-        self.time_label.config(font=(self.current_font, self.current_size, 'bold'), text=time.strftime('%H:%M'))
-        self.date_label.config(font=(self.current_font, date_size, 'normal'), text=self.get_formatted_date())
-        
-        # 3. Handle Alignment and Packing
+        date_font_size = self.current_time_font_size // ratio_map.get(
+            self.date_font_ratio, 3
+        )
+
+        self.time_label.config(
+            font=(self.current_font_family, self.current_time_font_size, "bold"),
+            text=time.strftime("%H:%M")
+        )
+
+        self.date_label.config(
+            font=(self.current_font_family, date_font_size, "normal"),
+            text=self.get_formatted_date_string()
+        )
+
         anchor_map = {"center": "center", "left": "w", "right": "e"}
-        active_anchor = anchor_map.get(self.date_align, "center")
-        
-        self.time_label.pack_configure(anchor=active_anchor)
-        
-        if self.show_date:
-            self.date_label.pack(side='top', fill='x')
-            self.date_label.pack_configure(anchor=active_anchor)
+        anchor = anchor_map.get(self.date_alignment, "center")
+
+        self.time_label.pack_configure(anchor=anchor)
+
+        if self.is_date_visible:
+            self.date_label.pack(side="top", fill="x")
+            self.date_label.pack_configure(anchor=anchor)
         else:
             self.date_label.pack_forget()
 
-        # 4. Geometry logic: Preserve position during resize
-        self.root.update_idletasks()
-        ww = max(self.time_label.winfo_reqwidth(), self.date_label.winfo_reqwidth() if self.show_date else 0)
-        wh = self.time_label.winfo_reqheight() + (self.date_label.winfo_reqheight() if self.show_date else 0)
-        
-        curr_x = self.root.winfo_x()
-        curr_y = self.root.winfo_y()
-        self.root.geometry(f'{int(ww)}x{int(wh)}+{curr_x}+{curr_y}')
+        self._update_window_geometry()
 
-    def center_window(self):
+    def _update_window_geometry(self):
         self.root.update_idletasks()
-        sw = self.root.winfo_screenwidth()
-        ww = self.root.winfo_width()
-        self.root.geometry(f'+{(sw-ww)//2}+100')
+        width = max(
+            self.time_label.winfo_reqwidth(),
+            self.date_label.winfo_reqwidth() if self.is_date_visible else 0
+        )
+        height = self.time_label.winfo_reqheight() + (
+            self.date_label.winfo_reqheight() if self.is_date_visible else 0
+        )
 
-    def start_move(self, event):
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        self.root.geometry(f"{int(width)}x{int(height)}+{x}+{y}")
+
+    # -------------------- Window Movement --------------------
+
+    def _center_window(self):
+        self.root.update_idletasks()
+        screen_width = self.root.winfo_screenwidth()
+        window_width = self.root.winfo_width()
+        self.root.geometry(f"+{(screen_width - window_width) // 2}+100")
+
+    def _start_window_drag(self, event):
         self.root.lift()
-        self.x, self.y = event.x, event.y
+        self.drag_offset_x = event.x
+        self.drag_offset_y = event.y
 
-    def do_move(self, event):
-        x = self.root.winfo_x() + (event.x - self.x)
-        y = self.root.winfo_y() + (event.y - self.y)
+    def _drag_window(self, event):
+        x = self.root.winfo_x() + (event.x - self.drag_offset_x)
+        y = self.root.winfo_y() + (event.y - self.drag_offset_y)
         self.root.geometry(f"+{x}+{y}")
 
-    def show_menu(self, event):
-        self.menu.post(event.x_root, event.y_root)
+    def _show_context_menu(self, event):
+        self.context_menu.post(event.x_root, event.y_root)
 
-    def edit_size(self):
-        new_size = simpledialog.askinteger("Size", "Enter Time Font Size:", parent=self.root)
-        if new_size: self.current_size = new_size; self.refresh_ui()
+    # -------------------- User Input Dialogs --------------------
 
-    def edit_position(self):
-        pos_str = simpledialog.askstring("Pos", "X,Y:", parent=self.root)
-        if pos_str:
-            try: 
-                x, y = pos_str.split(',')
+    def _prompt_time_font_size(self):
+        new_size = simpledialog.askinteger(
+            "Time Font Size",
+            "Enter new font size for time:",
+            parent=self.root
+        )
+        if new_size:
+            self.current_time_font_size = new_size
+            self.refresh_display()
+
+    def _prompt_window_position(self):
+        position_input = simpledialog.askstring(
+            "Window Position",
+            "Enter X,Y:",
+            parent=self.root
+        )
+        if position_input:
+            try:
+                x, y = position_input.split(",")
                 self.root.geometry(f"+{int(x)}+{int(y)}")
-            except: pass
+            except ValueError:
+                pass
 
-    def hide_dock_and_stay(self):
+    # -------------------- macOS Behavior --------------------
+
+    def _apply_macos_window_behavior(self):
         try:
             import AppKit
             AppKit.NSApplication.sharedApplication().setActivationPolicy_(1)
             AppKit.NSApp.activateIgnoringOtherApps_(True)
-        except: pass
+        except Exception:
+            pass
 
-    def update_clock(self):
-        self.time_label.config(text=time.strftime('%H:%M'))
-        if self.show_date: self.date_label.config(text=self.get_formatted_date())
+    # -------------------- Time Update Loop --------------------
+
+    def _update_time_loop(self):
+        self.time_label.config(text=time.strftime("%H:%M"))
+
+        if self.is_date_visible:
+            self.date_label.config(text=self.get_formatted_date_string())
+
         self.root.lower()
-        self.root.after(5000, self.update_clock)
+        self.root.after(5000, self._update_time_loop)
+
 
 if __name__ == "__main__":
     time.sleep(0.5)
-    UltimateClock()
+    ClockApplication()
